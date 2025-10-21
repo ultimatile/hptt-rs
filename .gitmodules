@@ -1,0 +1,3 @@
+[submodule "vendor/hptt"]
+	path = vendor/hptt
+	url = https://github.com/ultimatile/hptt.git
