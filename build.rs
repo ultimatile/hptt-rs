@@ -16,6 +16,13 @@ fn main() {
     println!("cargo:rustc-link-search=native={}/lib", dst.display());
     println!("cargo:rustc-link-lib=static=hptt");
 
+    // Link against C++ standard library
+    #[cfg(target_os = "macos")]
+    println!("cargo:rustc-link-lib=dylib=c++");
+
+    #[cfg(target_os = "linux")]
+    println!("cargo:rustc-link-lib=dylib=stdc++");
+
     // Link against OpenMP (platform-dependent)
     // OpenMP is optional - HPTT can run single-threaded without it
     #[cfg(target_os = "macos")]

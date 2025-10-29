@@ -25,6 +25,7 @@
 
 mod ffi;
 
+pub use num_complex::{Complex32, Complex64};
 use std::os::raw::c_int;
 
 /// Error type for HPTT operations
@@ -158,7 +159,7 @@ pub fn transpose_f64(
             output.as_mut_ptr(),
             std::ptr::null(), // outerSizeB
             num_threads,
-            0, // column-major (Fortran order)
+            1, // row-major (C order)
         );
     }
 
@@ -210,7 +211,113 @@ pub fn transpose_f32(
             output.as_mut_ptr(),
             std::ptr::null(),
             num_threads,
-            0, // column-major
+            1, // row-major (C order)
+        );
+    }
+
+    Ok(())
+}
+
+/// Transpose a single-precision complex (Complex32) tensor
+///
+/// Same as `transpose_f32` but for single-precision complex numbers.
+pub fn transpose_c32(
+    perm: &[usize],
+    alpha: Complex32,
+    input: &[Complex32],
+    shape: &[usize],
+    beta: Complex32,
+    output: &mut [Complex32],
+    num_threads: usize,
+) -> Result<()> {
+    validate_permutation(perm, shape)?;
+
+    let total = total_elements(shape);
+    if input.len() != total {
+        return Err(Error::BufferSizeMismatch {
+            expected: total,
+            actual: input.len(),
+        });
+    }
+    if output.len() != total {
+        return Err(Error::BufferSizeMismatch {
+            expected: total,
+            actual: output.len(),
+        });
+    }
+
+    let perm_i32: Vec<c_int> = perm.iter().map(|&x| x as c_int).collect();
+    let shape_i32: Vec<c_int> = shape.iter().map(|&x| x as c_int).collect();
+    let dim = shape.len() as c_int;
+    let num_threads = num_threads as c_int;
+
+    unsafe {
+        ffi::cTensorTranspose(
+            perm_i32.as_ptr(),
+            dim,
+            alpha,
+            false, // conjA: no conjugation
+            input.as_ptr(),
+            shape_i32.as_ptr(),
+            std::ptr::null(),
+            beta,
+            output.as_mut_ptr(),
+            std::ptr::null(),
+            num_threads,
+            1, // row-major (C order)
+        );
+    }
+
+    Ok(())
+}
+
+/// Transpose a double-precision complex (Complex64) tensor
+///
+/// Same as `transpose_f64` but for double-precision complex numbers.
+pub fn transpose_c64(
+    perm: &[usize],
+    alpha: Complex64,
+    input: &[Complex64],
+    shape: &[usize],
+    beta: Complex64,
+    output: &mut [Complex64],
+    num_threads: usize,
+) -> Result<()> {
+    validate_permutation(perm, shape)?;
+
+    let total = total_elements(shape);
+    if input.len() != total {
+        return Err(Error::BufferSizeMismatch {
+            expected: total,
+            actual: input.len(),
+        });
+    }
+    if output.len() != total {
+        return Err(Error::BufferSizeMismatch {
+            expected: total,
+            actual: output.len(),
+        });
+    }
+
+    let perm_i32: Vec<c_int> = perm.iter().map(|&x| x as c_int).collect();
+    let shape_i32: Vec<c_int> = shape.iter().map(|&x| x as c_int).collect();
+    let dim = shape.len() as c_int;
+    let num_threads = num_threads as c_int;
+
+    unsafe {
+        ffi::zTensorTranspose(
+            perm_i32.as_ptr(),
+            dim,
+            alpha,
+            false, // conjA: no conjugation
+            input.as_ptr(),
+            shape_i32.as_ptr(),
+            std::ptr::null(),
+            beta,
+            output.as_mut_ptr(),
+            std::ptr::null(),
+            num_threads,
+            1, // row-major (C order)
         );
     }
 

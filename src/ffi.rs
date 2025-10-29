@@ -1,5 +1,6 @@
 //! Low-level FFI bindings to HPTT C API
 
+use num_complex::{Complex32, Complex64};
 use std::os::raw::{c_double, c_float, c_int};
 
 #[link(name = "hptt", kind = "static")]
@@ -49,7 +50,39 @@ unsafe extern "C" {
         useRowMajor: c_int,
     );
 
-    // Complex versions are available but not exposed initially
-    // pub fn cTensorTranspose(...);
-    // pub fn zTensorTranspose(...);
+    /// Single-precision complex tensor transpose
+    ///
+    /// Same arguments as sTensorTranspose but with single-precision complex numbers
+    pub fn cTensorTranspose(
+        perm: *const c_int,
+        dim: c_int,
+        alpha: Complex32,
+        conjA: bool,
+        A: *const Complex32,
+        sizeA: *const c_int,
+        outerSizeA: *const c_int,
+        beta: Complex32,
+        B: *mut Complex32,
+        outerSizeB: *const c_int,
+        numThreads: c_int,
+        useRowMajor: c_int,
+    );
+
+    /// Double-precision complex tensor transpose
+    ///
+    /// Same arguments as dTensorTranspose but with double-precision complex numbers
+    pub fn zTensorTranspose(
+        perm: *const c_int,
+        dim: c_int,
+        alpha: Complex64,
+        conjA: bool,
+        A: *const Complex64,
+        sizeA: *const c_int,
+        outerSizeA: *const c_int,
+        beta: Complex64,
+        B: *mut Complex64,
+        outerSizeB: *const c_int,
+        numThreads: c_int,
+        useRowMajor: c_int,
+    );
 }
