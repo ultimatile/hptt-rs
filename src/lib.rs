@@ -32,23 +32,20 @@ use std::os::raw::c_int;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     /// Dimension mismatch between permutation and shape
-    DimensionMismatch {
-        perm_len: usize,
-        shape_len: usize,
-    },
+    DimensionMismatch { perm_len: usize, shape_len: usize },
     /// Invalid permutation (not a valid permutation of 0..n-1)
     InvalidPermutation,
     /// Buffer size mismatch
-    BufferSizeMismatch {
-        expected: usize,
-        actual: usize,
-    },
+    BufferSizeMismatch { expected: usize, actual: usize },
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::DimensionMismatch { perm_len, shape_len } => {
+            Error::DimensionMismatch {
+                perm_len,
+                shape_len,
+            } => {
                 write!(
                     f,
                     "Permutation length ({}) doesn't match shape length ({})",
@@ -57,7 +54,11 @@ impl std::fmt::Display for Error {
             }
             Error::InvalidPermutation => write!(f, "Invalid permutation"),
             Error::BufferSizeMismatch { expected, actual } => {
-                write!(f, "Buffer size mismatch: expected {}, got {}", expected, actual)
+                write!(
+                    f,
+                    "Buffer size mismatch: expected {}, got {}",
+                    expected, actual
+                )
             }
         }
     }
