@@ -351,4 +351,46 @@ mod tests {
         assert_eq!(total_elements(&[10]), 10);
         assert_eq!(total_elements(&[]), 1);
     }
+
+    #[test]
+    fn test_transpose_f64_2d() {
+        let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let mut output = vec![0.0; input.len()];
+
+        transpose_f64(&[1, 0], 1.0, &input, &[2, 3], 0.0, &mut output, 1).unwrap();
+
+        assert_eq!(output, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+    }
+
+    #[test]
+    fn test_transpose_c32_2d() {
+        let input = vec![
+            Complex32::new(1.0, 10.0),
+            Complex32::new(2.0, 20.0),
+            Complex32::new(3.0, 30.0),
+            Complex32::new(4.0, 40.0),
+        ];
+        let mut output = vec![Complex32::new(0.0, 0.0); input.len()];
+
+        transpose_c32(
+            &[1, 0],
+            Complex32::new(1.0, 0.0),
+            &input,
+            &[2, 2],
+            Complex32::new(0.0, 0.0),
+            &mut output,
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(
+            output,
+            vec![
+                Complex32::new(1.0, 10.0),
+                Complex32::new(3.0, 30.0),
+                Complex32::new(2.0, 20.0),
+                Complex32::new(4.0, 40.0),
+            ]
+        );
+    }
 }
