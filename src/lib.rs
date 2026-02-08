@@ -37,6 +37,10 @@ pub enum Error {
     InvalidPermutation,
     /// Buffer size mismatch
     BufferSizeMismatch { expected: usize, actual: usize },
+    /// Value does not fit in C API integer range (c_int / i32)
+    ValueOutOfRange { field: &'static str, value: usize },
+    /// Tensor element count overflowed usize while multiplying shape dimensions
+    ElementCountOverflow,
 }
 
 impl std::fmt::Display for Error {
@@ -60,6 +64,10 @@ impl std::fmt::Display for Error {
                     expected, actual
                 )
             }
+            Error::ValueOutOfRange { field, value } => {
+                write!(f, "Value out of range for {}: {}", field, value)
+            }
+            Error::ElementCountOverflow => write!(f, "Tensor element count overflow"),
         }
     }
 }
@@ -93,8 +101,25 @@ fn validate_permutation(perm: &[usize], shape: &[usize]) -> Result<()> {
 }
 
 /// Calculate total number of elements from shape
-fn total_elements(shape: &[usize]) -> usize {
-    shape.iter().product()
+fn total_elements(shape: &[usize]) -> Result<usize> {
+    shape
+        .iter()
+        .try_fold(1usize, |acc, &dim| acc.checked_mul(dim))
+        .ok_or(Error::ElementCountOverflow)
+}
+
+fn usize_to_c_int(value: usize, field: &'static str) -> Result<c_int> {
+    i32::try_from(value)
+        .map(|v| v as c_int)
+        .map_err(|_| Error::ValueOutOfRange { field, value })
+}
+
+fn usize_slice_to_c_int_vec(values: &[usize], field: &'static str) -> Result<Vec<c_int>> {
+    values
+        .iter()
+        .copied()
+        .map(|v| usize_to_c_int(v, field))
+        .collect()
 }
 
 /// Transpose a double-precision (f64) tensor
@@ -128,7 +153,7 @@ pub fn transpose_f64(
 ) -> Result<()> {
     validate_permutation(perm, shape)?;
 
-    let total = total_elements(shape);
+    let total = total_elements(shape)?;
     if input.len() != total {
         return Err(Error::BufferSizeMismatch {
             expected: total,
@@ -143,10 +168,10 @@ pub fn transpose_f64(
     }
 
     // Convert to i32 for C API
-    let perm_i32: Vec<c_int> = perm.iter().map(|&x| x as c_int).collect();
-    let shape_i32: Vec<c_int> = shape.iter().map(|&x| x as c_int).collect();
-    let dim = shape.len() as c_int;
-    let num_threads = num_threads as c_int;
+    let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
+    let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
+    let dim = usize_to_c_int(shape.len(), "shape length")?;
+    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
 
     unsafe {
         ffi::dTensorTranspose(
@@ -181,7 +206,7 @@ pub fn transpose_f32(
 ) -> Result<()> {
     validate_permutation(perm, shape)?;
 
-    let total = total_elements(shape);
+    let total = total_elements(shape)?;
     if input.len() != total {
         return Err(Error::BufferSizeMismatch {
             expected: total,
@@ -195,10 +220,10 @@ pub fn transpose_f32(
         });
     }
 
-    let perm_i32: Vec<c_int> = perm.iter().map(|&x| x as c_int).collect();
-    let shape_i32: Vec<c_int> = shape.iter().map(|&x| x as c_int).collect();
-    let dim = shape.len() as c_int;
-    let num_threads = num_threads as c_int;
+    let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
+    let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
+    let dim = usize_to_c_int(shape.len(), "shape length")?;
+    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
 
     unsafe {
         ffi::sTensorTranspose(
@@ -233,7 +258,7 @@ pub fn transpose_c32(
 ) -> Result<()> {
     validate_permutation(perm, shape)?;
 
-    let total = total_elements(shape);
+    let total = total_elements(shape)?;
     if input.len() != total {
         return Err(Error::BufferSizeMismatch {
             expected: total,
@@ -247,10 +272,10 @@ pub fn transpose_c32(
         });
     }
 
-    let perm_i32: Vec<c_int> = perm.iter().map(|&x| x as c_int).collect();
-    let shape_i32: Vec<c_int> = shape.iter().map(|&x| x as c_int).collect();
-    let dim = shape.len() as c_int;
-    let num_threads = num_threads as c_int;
+    let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
+    let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
+    let dim = usize_to_c_int(shape.len(), "shape length")?;
+    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
 
     unsafe {
         ffi::cTensorTranspose(
@@ -286,7 +311,7 @@ pub fn transpose_c64(
 ) -> Result<()> {
     validate_permutation(perm, shape)?;
 
-    let total = total_elements(shape);
+    let total = total_elements(shape)?;
     if input.len() != total {
         return Err(Error::BufferSizeMismatch {
             expected: total,
@@ -300,10 +325,10 @@ pub fn transpose_c64(
         });
     }
 
-    let perm_i32: Vec<c_int> = perm.iter().map(|&x| x as c_int).collect();
-    let shape_i32: Vec<c_int> = shape.iter().map(|&x| x as c_int).collect();
-    let dim = shape.len() as c_int;
-    let num_threads = num_threads as c_int;
+    let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
+    let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
+    let dim = usize_to_c_int(shape.len(), "shape length")?;
+    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
 
     unsafe {
         ffi::zTensorTranspose(
@@ -347,9 +372,30 @@ mod tests {
 
     #[test]
     fn test_total_elements() {
-        assert_eq!(total_elements(&[2, 3, 4]), 24);
-        assert_eq!(total_elements(&[10]), 10);
-        assert_eq!(total_elements(&[]), 1);
+        assert_eq!(total_elements(&[2, 3, 4]).unwrap(), 24);
+        assert_eq!(total_elements(&[10]).unwrap(), 10);
+        assert_eq!(total_elements(&[]).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_total_elements_overflow() {
+        let shape = [usize::MAX, 2];
+        assert!(matches!(
+            total_elements(&shape),
+            Err(Error::ElementCountOverflow)
+        ));
+    }
+
+    #[test]
+    fn test_usize_to_c_int_range_check() {
+        let too_large = i32::MAX as usize + 1;
+        assert!(matches!(
+            usize_to_c_int(too_large, "num_threads"),
+            Err(Error::ValueOutOfRange {
+                field: "num_threads",
+                value
+            }) if value == too_large
+        ));
     }
 
     #[test]
