@@ -1,23 +1,23 @@
 [package]
 name = "hptt"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Rust bindings for HPTT (High-Performance Tensor Transposition)"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/ultimatile/hptt-rs"
 readme = "README.md"
-keywords = ["tensor", "transpose", "hpc"]
-categories = ["science", "mathematics"]
+repository = "https://github.com/ultimatile/hptt-rs"
+license = "MIT OR Apache-2.0"
+keywords = ["hpc", "tensor", "transpose"]
+categories = ["mathematics", "science"]
+
+[lib]
+name = "hptt"
+path = "src/lib.rs"
 
 [dependencies]
 num-complex = "0.4"
 
 [build-dependencies]
 cmake = "0.1"
-
-[lib]
-name = "hptt"
-path = "src/lib.rs"
 
 [features]
 default = []
