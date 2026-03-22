@@ -277,6 +277,7 @@ pub fn transpose_c32(
     beta: Complex32,
     output: &mut [Complex32],
     num_threads: usize,
+    conj: bool,
     order: MemoryOrder,
 ) -> Result<()> {
     validate_permutation(perm, shape)?;
@@ -305,7 +306,7 @@ pub fn transpose_c32(
             perm_i32.as_ptr(),
             dim,
             alpha,
-            false, // conjA: no conjugation
+            conj,
             input.as_ptr(),
             shape_i32.as_ptr(),
             std::ptr::null(),
@@ -331,6 +332,7 @@ pub fn transpose_c64(
     beta: Complex64,
     output: &mut [Complex64],
     num_threads: usize,
+    conj: bool,
     order: MemoryOrder,
 ) -> Result<()> {
     validate_permutation(perm, shape)?;
@@ -359,7 +361,7 @@ pub fn transpose_c64(
             perm_i32.as_ptr(),
             dim,
             alpha,
-            false, // conjA: no conjugation
+            conj,
             input.as_ptr(),
             shape_i32.as_ptr(),
             std::ptr::null(),
@@ -451,6 +453,7 @@ mod tests {
             Complex32::new(0.0, 0.0),
             &mut output,
             1,
+            false,
             MemoryOrder::RowMajor,
         )
         .unwrap();
@@ -462,6 +465,41 @@ mod tests {
                 Complex32::new(3.0, 30.0),
                 Complex32::new(2.0, 20.0),
                 Complex32::new(4.0, 40.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_transpose_c32_2d_conj() {
+        let input = vec![
+            Complex32::new(1.0, 10.0),
+            Complex32::new(2.0, 20.0),
+            Complex32::new(3.0, 30.0),
+            Complex32::new(4.0, 40.0),
+        ];
+        let mut output = vec![Complex32::new(0.0, 0.0); input.len()];
+
+        transpose_c32(
+            &[1, 0],
+            Complex32::new(1.0, 0.0),
+            &input,
+            &[2, 2],
+            Complex32::new(0.0, 0.0),
+            &mut output,
+            1,
+            true,
+            MemoryOrder::RowMajor,
+        )
+        .unwrap();
+
+        // Conjugate transpose: transpose + negate imaginary parts
+        assert_eq!(
+            output,
+            vec![
+                Complex32::new(1.0, -10.0),
+                Complex32::new(3.0, -30.0),
+                Complex32::new(2.0, -20.0),
+                Complex32::new(4.0, -40.0),
             ]
         );
     }
