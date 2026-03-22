@@ -60,6 +60,14 @@ pub enum Error {
     ValueOutOfRange { field: &'static str, value: usize },
     /// Tensor element count overflowed usize while multiplying shape dimensions
     ElementCountOverflow,
+    /// Outer size length doesn't match shape length
+    OuterSizeLengthMismatch { expected: usize, actual: usize },
+    /// Outer size is smaller than shape size for a dimension
+    OuterSizeTooSmall {
+        dim: usize,
+        outer_size: usize,
+        shape_size: usize,
+    },
 }
 
 impl std::fmt::Display for Error {
@@ -87,6 +95,24 @@ impl std::fmt::Display for Error {
                 write!(f, "Value out of range for {}: {}", field, value)
             }
             Error::ElementCountOverflow => write!(f, "Tensor element count overflow"),
+            Error::OuterSizeLengthMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "Outer size length ({}) doesn't match shape length ({})",
+                    actual, expected
+                )
+            }
+            Error::OuterSizeTooSmall {
+                dim,
+                outer_size,
+                shape_size,
+            } => {
+                write!(
+                    f,
+                    "Outer size ({}) is smaller than shape size ({}) for dimension {}",
+                    outer_size, shape_size, dim
+                )
+            }
         }
     }
 }
@@ -125,6 +151,30 @@ fn total_elements(shape: &[usize]) -> Result<usize> {
         .iter()
         .try_fold(1usize, |acc, &dim| acc.checked_mul(dim))
         .ok_or(Error::ElementCountOverflow)
+}
+
+/// Validate outer_size against shape: each outer_size[i] >= required_size[i]
+fn validate_outer_size(
+    outer_size: &[usize],
+    required_size: &[usize],
+    ndim: usize,
+) -> Result<()> {
+    if outer_size.len() != ndim {
+        return Err(Error::OuterSizeLengthMismatch {
+            expected: ndim,
+            actual: outer_size.len(),
+        });
+    }
+    for i in 0..ndim {
+        if outer_size[i] < required_size[i] {
+            return Err(Error::OuterSizeTooSmall {
+                dim: i,
+                outer_size: outer_size[i],
+                shape_size: required_size[i],
+            });
+        }
+    }
+    Ok(())
 }
 
 fn usize_to_c_int(value: usize, field: &'static str) -> Result<c_int> {
@@ -213,6 +263,71 @@ pub fn transpose_f64(
     Ok(())
 }
 
+/// Transpose a sub-tensor of a double-precision (f64) tensor
+///
+/// Same as `transpose_f64` but operates on a sub-tensor within a larger allocation.
+/// `outer_size_a` and `outer_size_b` specify the allocated (padded) dimensions of the
+/// input and output buffers respectively. Each `outer_size[i]` must be >= the
+/// corresponding shape dimension.
+pub fn transpose_f64_sub(
+    perm: &[usize],
+    alpha: f64,
+    input: &[f64],
+    shape: &[usize],
+    outer_size_a: &[usize],
+    beta: f64,
+    output: &mut [f64],
+    outer_size_b: &[usize],
+    num_threads: usize,
+    order: MemoryOrder,
+) -> Result<()> {
+    validate_permutation(perm, shape)?;
+    let ndim = shape.len();
+    validate_outer_size(outer_size_a, shape, ndim)?;
+    let permuted_shape: Vec<usize> = perm.iter().map(|&p| shape[p]).collect();
+    validate_outer_size(outer_size_b, &permuted_shape, ndim)?;
+
+    let total_a = total_elements(outer_size_a)?;
+    if input.len() < total_a {
+        return Err(Error::BufferSizeMismatch {
+            expected: total_a,
+            actual: input.len(),
+        });
+    }
+    let total_b = total_elements(outer_size_b)?;
+    if output.len() < total_b {
+        return Err(Error::BufferSizeMismatch {
+            expected: total_b,
+            actual: output.len(),
+        });
+    }
+
+    let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
+    let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
+    let outer_a_i32 = usize_slice_to_c_int_vec(outer_size_a, "outer_size_a element")?;
+    let outer_b_i32 = usize_slice_to_c_int_vec(outer_size_b, "outer_size_b element")?;
+    let dim = usize_to_c_int(ndim, "shape length")?;
+    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+
+    unsafe {
+        ffi::dTensorTranspose(
+            perm_i32.as_ptr(),
+            dim,
+            alpha,
+            input.as_ptr(),
+            shape_i32.as_ptr(),
+            outer_a_i32.as_ptr(),
+            beta,
+            output.as_mut_ptr(),
+            outer_b_i32.as_ptr(),
+            num_threads,
+            order.to_hptt_flag(),
+        );
+    }
+
+    Ok(())
+}
+
 /// Transpose a single-precision (f32) tensor
 ///
 /// Same as `transpose_f64` but for single-precision floats.
@@ -258,6 +373,68 @@ pub fn transpose_f32(
             beta,
             output.as_mut_ptr(),
             std::ptr::null(),
+            num_threads,
+            order.to_hptt_flag(),
+        );
+    }
+
+    Ok(())
+}
+
+/// Transpose a sub-tensor of a single-precision (f32) tensor
+///
+/// Same as `transpose_f32` but operates on a sub-tensor within a larger allocation.
+pub fn transpose_f32_sub(
+    perm: &[usize],
+    alpha: f32,
+    input: &[f32],
+    shape: &[usize],
+    outer_size_a: &[usize],
+    beta: f32,
+    output: &mut [f32],
+    outer_size_b: &[usize],
+    num_threads: usize,
+    order: MemoryOrder,
+) -> Result<()> {
+    validate_permutation(perm, shape)?;
+    let ndim = shape.len();
+    validate_outer_size(outer_size_a, shape, ndim)?;
+    let permuted_shape: Vec<usize> = perm.iter().map(|&p| shape[p]).collect();
+    validate_outer_size(outer_size_b, &permuted_shape, ndim)?;
+
+    let total_a = total_elements(outer_size_a)?;
+    if input.len() < total_a {
+        return Err(Error::BufferSizeMismatch {
+            expected: total_a,
+            actual: input.len(),
+        });
+    }
+    let total_b = total_elements(outer_size_b)?;
+    if output.len() < total_b {
+        return Err(Error::BufferSizeMismatch {
+            expected: total_b,
+            actual: output.len(),
+        });
+    }
+
+    let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
+    let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
+    let outer_a_i32 = usize_slice_to_c_int_vec(outer_size_a, "outer_size_a element")?;
+    let outer_b_i32 = usize_slice_to_c_int_vec(outer_size_b, "outer_size_b element")?;
+    let dim = usize_to_c_int(ndim, "shape length")?;
+    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+
+    unsafe {
+        ffi::sTensorTranspose(
+            perm_i32.as_ptr(),
+            dim,
+            alpha,
+            input.as_ptr(),
+            shape_i32.as_ptr(),
+            outer_a_i32.as_ptr(),
+            beta,
+            output.as_mut_ptr(),
+            outer_b_i32.as_ptr(),
             num_threads,
             order.to_hptt_flag(),
         );
@@ -321,6 +498,70 @@ pub fn transpose_c32(
     Ok(())
 }
 
+/// Transpose a sub-tensor of a single-precision complex (Complex32) tensor
+///
+/// Same as `transpose_c32` but operates on a sub-tensor within a larger allocation.
+pub fn transpose_c32_sub(
+    perm: &[usize],
+    alpha: Complex32,
+    input: &[Complex32],
+    shape: &[usize],
+    outer_size_a: &[usize],
+    beta: Complex32,
+    output: &mut [Complex32],
+    outer_size_b: &[usize],
+    num_threads: usize,
+    conj: bool,
+    order: MemoryOrder,
+) -> Result<()> {
+    validate_permutation(perm, shape)?;
+    let ndim = shape.len();
+    validate_outer_size(outer_size_a, shape, ndim)?;
+    let permuted_shape: Vec<usize> = perm.iter().map(|&p| shape[p]).collect();
+    validate_outer_size(outer_size_b, &permuted_shape, ndim)?;
+
+    let total_a = total_elements(outer_size_a)?;
+    if input.len() < total_a {
+        return Err(Error::BufferSizeMismatch {
+            expected: total_a,
+            actual: input.len(),
+        });
+    }
+    let total_b = total_elements(outer_size_b)?;
+    if output.len() < total_b {
+        return Err(Error::BufferSizeMismatch {
+            expected: total_b,
+            actual: output.len(),
+        });
+    }
+
+    let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
+    let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
+    let outer_a_i32 = usize_slice_to_c_int_vec(outer_size_a, "outer_size_a element")?;
+    let outer_b_i32 = usize_slice_to_c_int_vec(outer_size_b, "outer_size_b element")?;
+    let dim = usize_to_c_int(ndim, "shape length")?;
+    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+
+    unsafe {
+        ffi::cTensorTranspose(
+            perm_i32.as_ptr(),
+            dim,
+            alpha,
+            conj,
+            input.as_ptr(),
+            shape_i32.as_ptr(),
+            outer_a_i32.as_ptr(),
+            beta,
+            output.as_mut_ptr(),
+            outer_b_i32.as_ptr(),
+            num_threads,
+            order.to_hptt_flag(),
+        );
+    }
+
+    Ok(())
+}
+
 /// Transpose a double-precision complex (Complex64) tensor
 ///
 /// Same as `transpose_f64` but for double-precision complex numbers.
@@ -368,6 +609,70 @@ pub fn transpose_c64(
             beta,
             output.as_mut_ptr(),
             std::ptr::null(),
+            num_threads,
+            order.to_hptt_flag(),
+        );
+    }
+
+    Ok(())
+}
+
+/// Transpose a sub-tensor of a double-precision complex (Complex64) tensor
+///
+/// Same as `transpose_c64` but operates on a sub-tensor within a larger allocation.
+pub fn transpose_c64_sub(
+    perm: &[usize],
+    alpha: Complex64,
+    input: &[Complex64],
+    shape: &[usize],
+    outer_size_a: &[usize],
+    beta: Complex64,
+    output: &mut [Complex64],
+    outer_size_b: &[usize],
+    num_threads: usize,
+    conj: bool,
+    order: MemoryOrder,
+) -> Result<()> {
+    validate_permutation(perm, shape)?;
+    let ndim = shape.len();
+    validate_outer_size(outer_size_a, shape, ndim)?;
+    let permuted_shape: Vec<usize> = perm.iter().map(|&p| shape[p]).collect();
+    validate_outer_size(outer_size_b, &permuted_shape, ndim)?;
+
+    let total_a = total_elements(outer_size_a)?;
+    if input.len() < total_a {
+        return Err(Error::BufferSizeMismatch {
+            expected: total_a,
+            actual: input.len(),
+        });
+    }
+    let total_b = total_elements(outer_size_b)?;
+    if output.len() < total_b {
+        return Err(Error::BufferSizeMismatch {
+            expected: total_b,
+            actual: output.len(),
+        });
+    }
+
+    let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
+    let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
+    let outer_a_i32 = usize_slice_to_c_int_vec(outer_size_a, "outer_size_a element")?;
+    let outer_b_i32 = usize_slice_to_c_int_vec(outer_size_b, "outer_size_b element")?;
+    let dim = usize_to_c_int(ndim, "shape length")?;
+    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+
+    unsafe {
+        ffi::zTensorTranspose(
+            perm_i32.as_ptr(),
+            dim,
+            alpha,
+            conj,
+            input.as_ptr(),
+            shape_i32.as_ptr(),
+            outer_a_i32.as_ptr(),
+            beta,
+            output.as_mut_ptr(),
+            outer_b_i32.as_ptr(),
             num_threads,
             order.to_hptt_flag(),
         );
@@ -502,5 +807,106 @@ mod tests {
                 Complex32::new(4.0, -40.0),
             ]
         );
+    }
+
+    #[test]
+    fn test_transpose_f64_sub_2d() {
+        // 2x3 sub-tensor within a 4x5 allocation (row-major)
+        // Logical data:
+        //   [[1, 2, 3],
+        //    [4, 5, 6]]
+        // Stored in 4x5 buffer with padding
+        let mut input = vec![0.0; 4 * 5];
+        // Row 0: indices 0..3
+        input[0] = 1.0;
+        input[1] = 2.0;
+        input[2] = 3.0;
+        // Row 1: indices 5..8 (stride 5)
+        input[5] = 4.0;
+        input[6] = 5.0;
+        input[7] = 6.0;
+
+        // Output: 3x2 sub-tensor within a 5x4 allocation
+        let mut output = vec![0.0; 5 * 4];
+
+        transpose_f64_sub(
+            &[1, 0],
+            1.0,
+            &input,
+            &[2, 3],
+            &[4, 5],
+            0.0,
+            &mut output,
+            &[5, 4],
+            1,
+            MemoryOrder::RowMajor,
+        )
+        .unwrap();
+
+        // Expected transposed 3x2 in 5x4 buffer (stride 4):
+        //   [[1, 4],
+        //    [2, 5],
+        //    [3, 6]]
+        assert_eq!(output[0], 1.0);
+        assert_eq!(output[1], 4.0);
+        assert_eq!(output[4], 2.0);
+        assert_eq!(output[5], 5.0);
+        assert_eq!(output[8], 3.0);
+        assert_eq!(output[9], 6.0);
+    }
+
+    #[test]
+    fn test_transpose_sub_outer_size_too_small() {
+        let input = vec![0.0; 20];
+        let mut output = vec![0.0; 20];
+
+        let result = transpose_f64_sub(
+            &[1, 0],
+            1.0,
+            &input,
+            &[2, 3],
+            &[1, 5], // outer_size_a[0]=1 < shape[0]=2
+            0.0,
+            &mut output,
+            &[5, 4],
+            1,
+            MemoryOrder::RowMajor,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::OuterSizeTooSmall {
+                dim: 0,
+                outer_size: 1,
+                shape_size: 2,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_transpose_sub_outer_size_length_mismatch() {
+        let input = vec![0.0; 20];
+        let mut output = vec![0.0; 20];
+
+        let result = transpose_f64_sub(
+            &[1, 0],
+            1.0,
+            &input,
+            &[2, 3],
+            &[4, 5, 6], // length 3 != ndim 2
+            0.0,
+            &mut output,
+            &[5, 4],
+            1,
+            MemoryOrder::RowMajor,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::OuterSizeLengthMismatch {
+                expected: 2,
+                actual: 3,
+            })
+        ));
     }
 }
