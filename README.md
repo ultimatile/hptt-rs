@@ -26,7 +26,7 @@ hptt = { git = "https://github.com/ultimatile/hptt-rs" }
 ## Usage
 
 ```rust
-use hptt::transpose_f64;
+use hptt::{transpose_f64, MemoryOrder};
 
 // Transpose a 3D tensor from shape [2, 3, 4] to [3, 2, 4]
 // Permutation [1, 0, 2] swaps the first two dimensions
@@ -35,22 +35,39 @@ let input = vec![1.0f64; 2 * 3 * 4];
 let mut output = vec![0.0f64; 3 * 2 * 4];
 
 transpose_f64(
-    &[1, 0, 2],  // permutation
-    1.0,         // alpha
+    &[1, 0, 2],           // permutation
+    1.0,                  // alpha
     &input,
-    &[2, 3, 4],  // shape
-    0.0,         // beta (0.0 = overwrite, 1.0 = accumulate)
+    &[2, 3, 4],           // shape
+    0.0,                  // beta (0.0 = overwrite, 1.0 = accumulate)
     &mut output,
-    1,           // num_threads
+    1,                    // num_threads
+    MemoryOrder::RowMajor,
 )?;
 ```
 
 ## API
 
-### Functions
+### Types
+
+- `MemoryOrder` - Memory layout order (`RowMajor` or `ColumnMajor`)
+
+### Dense Transpose
 
 - `transpose_f64` - Double-precision (f64) tensor transpose
 - `transpose_f32` - Single-precision (f32) tensor transpose
+- `transpose_c64` - Double-precision complex (Complex64) tensor transpose
+- `transpose_c32` - Single-precision complex (Complex32) tensor transpose
+
+Complex variants accept a `conj: bool` parameter for conjugate transpose (dagger operation).
+
+### Sub-tensor Transpose
+
+For transposing sub-tensors within larger allocations without copying:
+
+- `transpose_f64_sub`, `transpose_f32_sub`, `transpose_c64_sub`, `transpose_c32_sub`
+
+These accept additional `outer_size_a` and `outer_size_b` parameters specifying the allocated (padded) dimensions of the input and output buffers.
 
 ### Error Handling
 
@@ -59,6 +76,10 @@ Returns `Result<(), hptt::Error>` with the following error types:
 - `DimensionMismatch` - Permutation length doesn't match shape length
 - `InvalidPermutation` - Invalid permutation (not a valid permutation of 0..n-1)
 - `BufferSizeMismatch` - Buffer size doesn't match tensor size
+- `ValueOutOfRange` - Value does not fit in C API integer range
+- `ElementCountOverflow` - Tensor element count overflowed
+- `OuterSizeLengthMismatch` - Outer size length doesn't match shape length
+- `OuterSizeTooSmall` - Outer size is smaller than shape size for a dimension
 
 ## Building from Source
 
