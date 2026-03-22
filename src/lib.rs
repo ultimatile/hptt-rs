@@ -6,20 +6,21 @@
 //! # Example
 //!
 //! ```no_run
-//! use hptt::transpose_f64;
+//! use hptt::{transpose_f64, MemoryOrder};
 //!
 //! // Transpose a 3D tensor [2, 3, 4] -> [3, 2, 4]
 //! let input = vec![1.0; 2 * 3 * 4];
 //! let mut output = vec![0.0; 3 * 2 * 4];
 //!
 //! transpose_f64(
-//!     &[1, 0, 2],  // permutation: swap first two dims
-//!     1.0,         // alpha
+//!     &[1, 0, 2],           // permutation: swap first two dims
+//!     1.0,                  // alpha
 //!     &input,
-//!     &[2, 3, 4],  // shape
-//!     0.0,         // beta (overwrite)
+//!     &[2, 3, 4],           // shape
+//!     0.0,                  // beta (overwrite)
 //!     &mut output,
-//!     1,           // single thread
+//!     1,                    // single thread
+//!     MemoryOrder::RowMajor,
 //! ).expect("transpose failed");
 //! ```
 
@@ -27,6 +28,24 @@ mod ffi;
 
 pub use num_complex::{Complex32, Complex64};
 use std::os::raw::c_int;
+
+/// Memory layout order for tensor data
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryOrder {
+    /// Row-major (C order): rightmost index is stride-1
+    RowMajor,
+    /// Column-major (Fortran order): leftmost index is stride-1
+    ColumnMajor,
+}
+
+impl MemoryOrder {
+    fn to_hptt_flag(self) -> c_int {
+        match self {
+            MemoryOrder::RowMajor => 1,
+            MemoryOrder::ColumnMajor => 0,
+        }
+    }
+}
 
 /// Error type for HPTT operations
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +154,7 @@ fn usize_slice_to_c_int_vec(values: &[usize], field: &'static str) -> Result<Vec
 /// * `beta` - Scaling factor for output (0.0 to overwrite, 1.0 to accumulate)
 /// * `output` - Output tensor buffer (must be pre-allocated)
 /// * `num_threads` - Number of OpenMP threads (0 for default)
+/// * `order` - Memory layout order (row-major or column-major)
 ///
 /// # Errors
 ///
@@ -150,6 +170,7 @@ pub fn transpose_f64(
     beta: f64,
     output: &mut [f64],
     num_threads: usize,
+    order: MemoryOrder,
 ) -> Result<()> {
     validate_permutation(perm, shape)?;
 
@@ -185,7 +206,7 @@ pub fn transpose_f64(
             output.as_mut_ptr(),
             std::ptr::null(), // outerSizeB
             num_threads,
-            1, // row-major (C order)
+            order.to_hptt_flag(),
         );
     }
 
@@ -203,6 +224,7 @@ pub fn transpose_f32(
     beta: f32,
     output: &mut [f32],
     num_threads: usize,
+    order: MemoryOrder,
 ) -> Result<()> {
     validate_permutation(perm, shape)?;
 
@@ -237,7 +259,7 @@ pub fn transpose_f32(
             output.as_mut_ptr(),
             std::ptr::null(),
             num_threads,
-            1, // row-major (C order)
+            order.to_hptt_flag(),
         );
     }
 
@@ -255,6 +277,7 @@ pub fn transpose_c32(
     beta: Complex32,
     output: &mut [Complex32],
     num_threads: usize,
+    order: MemoryOrder,
 ) -> Result<()> {
     validate_permutation(perm, shape)?;
 
@@ -290,7 +313,7 @@ pub fn transpose_c32(
             output.as_mut_ptr(),
             std::ptr::null(),
             num_threads,
-            1, // row-major (C order)
+            order.to_hptt_flag(),
         );
     }
 
@@ -308,6 +331,7 @@ pub fn transpose_c64(
     beta: Complex64,
     output: &mut [Complex64],
     num_threads: usize,
+    order: MemoryOrder,
 ) -> Result<()> {
     validate_permutation(perm, shape)?;
 
@@ -343,7 +367,7 @@ pub fn transpose_c64(
             output.as_mut_ptr(),
             std::ptr::null(),
             num_threads,
-            1, // row-major (C order)
+            order.to_hptt_flag(),
         );
     }
 
@@ -403,7 +427,8 @@ mod tests {
         let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let mut output = vec![0.0; input.len()];
 
-        transpose_f64(&[1, 0], 1.0, &input, &[2, 3], 0.0, &mut output, 1).unwrap();
+        transpose_f64(&[1, 0], 1.0, &input, &[2, 3], 0.0, &mut output, 1, MemoryOrder::RowMajor)
+            .unwrap();
 
         assert_eq!(output, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
     }
@@ -426,6 +451,7 @@ mod tests {
             Complex32::new(0.0, 0.0),
             &mut output,
             1,
+            MemoryOrder::RowMajor,
         )
         .unwrap();
 
