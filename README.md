@@ -16,11 +16,15 @@ Where `π` is a user-specified permutation, and `α`, `β` are scalar coefficien
 
 ## Installation
 
-Add this to your `Cargo.toml`:
+```bash
+cargo add hptt
+```
+
+Or add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-hptt = { git = "https://github.com/ultimatile/hptt-rs" }
+hptt = "0.3"
 ```
 
 ## Usage
