@@ -68,6 +68,8 @@ pub enum Error {
         outer_size: usize,
         shape_size: usize,
     },
+    /// num_threads must be >= 1; 0 is not accepted
+    NumThreadsZero,
 }
 
 impl std::fmt::Display for Error {
@@ -113,6 +115,7 @@ impl std::fmt::Display for Error {
                     outer_size, shape_size, dim
                 )
             }
+            Error::NumThreadsZero => write!(f, "num_threads must be >= 1"),
         }
     }
 }
@@ -191,6 +194,16 @@ fn usize_slice_to_c_int_vec(values: &[usize], field: &'static str) -> Result<Vec
         .collect()
 }
 
+// HPTT's C++ core does not accept numThreads == 0: it triggers an
+// "Internal error: primefactorization for 0" and calls exit(-1) inside
+// createPlan. Reject 0 at the Rust boundary with a recoverable error.
+fn validate_num_threads(num_threads: usize) -> Result<c_int> {
+    if num_threads == 0 {
+        return Err(Error::NumThreadsZero);
+    }
+    usize_to_c_int(num_threads, "num_threads")
+}
+
 /// Transpose a double-precision (f64) tensor
 ///
 /// Performs the operation: `B[perm] = alpha * A + beta * B[perm]`
@@ -203,7 +216,7 @@ fn usize_slice_to_c_int_vec(values: &[usize], field: &'static str) -> Result<Vec
 /// * `shape` - Shape of input tensor
 /// * `beta` - Scaling factor for output (0.0 to overwrite, 1.0 to accumulate)
 /// * `output` - Output tensor buffer (must be pre-allocated)
-/// * `num_threads` - Number of OpenMP threads (0 for default)
+/// * `num_threads` - Number of OpenMP threads (must be >= 1; 0 is rejected)
 /// * `order` - Memory layout order (row-major or column-major)
 ///
 /// # Errors
@@ -212,6 +225,7 @@ fn usize_slice_to_c_int_vec(values: &[usize], field: &'static str) -> Result<Vec
 /// - Permutation length doesn't match shape length
 /// - Permutation is invalid
 /// - Buffer sizes don't match tensor size
+/// - `num_threads` is 0
 pub fn transpose_f64(
     perm: &[usize],
     alpha: f64,
@@ -242,7 +256,7 @@ pub fn transpose_f64(
     let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
     let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
     let dim = usize_to_c_int(shape.len(), "shape length")?;
-    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+    let num_threads = validate_num_threads(num_threads)?;
 
     unsafe {
         ffi::dTensorTranspose(
@@ -307,7 +321,7 @@ pub fn transpose_f64_sub(
     let outer_a_i32 = usize_slice_to_c_int_vec(outer_size_a, "outer_size_a element")?;
     let outer_b_i32 = usize_slice_to_c_int_vec(outer_size_b, "outer_size_b element")?;
     let dim = usize_to_c_int(ndim, "shape length")?;
-    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+    let num_threads = validate_num_threads(num_threads)?;
 
     unsafe {
         ffi::dTensorTranspose(
@@ -360,7 +374,7 @@ pub fn transpose_f32(
     let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
     let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
     let dim = usize_to_c_int(shape.len(), "shape length")?;
-    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+    let num_threads = validate_num_threads(num_threads)?;
 
     unsafe {
         ffi::sTensorTranspose(
@@ -422,7 +436,7 @@ pub fn transpose_f32_sub(
     let outer_a_i32 = usize_slice_to_c_int_vec(outer_size_a, "outer_size_a element")?;
     let outer_b_i32 = usize_slice_to_c_int_vec(outer_size_b, "outer_size_b element")?;
     let dim = usize_to_c_int(ndim, "shape length")?;
-    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+    let num_threads = validate_num_threads(num_threads)?;
 
     unsafe {
         ffi::sTensorTranspose(
@@ -476,7 +490,7 @@ pub fn transpose_c32(
     let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
     let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
     let dim = usize_to_c_int(shape.len(), "shape length")?;
-    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+    let num_threads = validate_num_threads(num_threads)?;
 
     unsafe {
         ffi::cTensorTranspose(
@@ -540,7 +554,7 @@ pub fn transpose_c32_sub(
     let outer_a_i32 = usize_slice_to_c_int_vec(outer_size_a, "outer_size_a element")?;
     let outer_b_i32 = usize_slice_to_c_int_vec(outer_size_b, "outer_size_b element")?;
     let dim = usize_to_c_int(ndim, "shape length")?;
-    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+    let num_threads = validate_num_threads(num_threads)?;
 
     unsafe {
         ffi::cTensorTranspose(
@@ -595,7 +609,7 @@ pub fn transpose_c64(
     let perm_i32 = usize_slice_to_c_int_vec(perm, "perm element")?;
     let shape_i32 = usize_slice_to_c_int_vec(shape, "shape element")?;
     let dim = usize_to_c_int(shape.len(), "shape length")?;
-    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+    let num_threads = validate_num_threads(num_threads)?;
 
     unsafe {
         ffi::zTensorTranspose(
@@ -659,7 +673,7 @@ pub fn transpose_c64_sub(
     let outer_a_i32 = usize_slice_to_c_int_vec(outer_size_a, "outer_size_a element")?;
     let outer_b_i32 = usize_slice_to_c_int_vec(outer_size_b, "outer_size_b element")?;
     let dim = usize_to_c_int(ndim, "shape length")?;
-    let num_threads = usize_to_c_int(num_threads, "num_threads")?;
+    let num_threads = validate_num_threads(num_threads)?;
 
     unsafe {
         ffi::zTensorTranspose(
@@ -727,6 +741,23 @@ mod tests {
                 value
             }) if value == too_large
         ));
+    }
+
+    #[test]
+    fn test_num_threads_zero_rejected() {
+        let input = vec![0.0; 6];
+        let mut output = vec![0.0; 6];
+        let result = transpose_f64(
+            &[1, 0],
+            1.0,
+            &input,
+            &[2, 3],
+            0.0,
+            &mut output,
+            0,
+            MemoryOrder::RowMajor,
+        );
+        assert!(matches!(result, Err(Error::NumThreadsZero)));
     }
 
     #[test]
