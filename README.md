@@ -24,7 +24,7 @@ Or add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-hptt = "0.3"
+hptt = "0.4"
 ```
 
 ## Usage
@@ -84,6 +84,9 @@ Returns `Result<(), hptt::Error>` with the following error types:
 - `ElementCountOverflow` - Tensor element count overflowed
 - `OuterSizeLengthMismatch` - Outer size length doesn't match shape length
 - `OuterSizeTooSmall` - Outer size is smaller than shape size for a dimension
+- `NumThreadsZero` - `num_threads` was 0 (must be >= 1)
+
+The `Error` enum is marked `#[non_exhaustive]`; downstream matches must include a catch-all arm.
 
 ## Building from Source
 
