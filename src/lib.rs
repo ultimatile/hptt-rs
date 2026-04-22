@@ -49,6 +49,7 @@ impl MemoryOrder {
 
 /// Error type for HPTT operations
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Error {
     /// Dimension mismatch between permutation and shape
     DimensionMismatch { perm_len: usize, shape_len: usize },
