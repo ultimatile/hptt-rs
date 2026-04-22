@@ -761,6 +761,27 @@ mod tests {
         assert!(matches!(result, Err(Error::NumThreadsZero)));
     }
 
+    // Contract: README's install snippet must advertise the same major.minor
+    // as the crate version. Guards against silent drift between Cargo.toml
+    // and README when we cut a release.
+    #[test]
+    fn readme_install_version_matches_crate_version() {
+        let readme = include_str!("../README.md");
+        let version = env!("CARGO_PKG_VERSION");
+        let major_minor = version
+            .rsplit_once('.')
+            .expect("CARGO_PKG_VERSION missing '.'")
+            .0;
+        let expected = format!("hptt = \"{}\"", major_minor);
+        assert!(
+            readme.contains(&expected),
+            "README install snippet should contain `{}` (crate version is {}), \
+             but it does not. Update README.md to match Cargo.toml.",
+            expected,
+            version
+        );
+    }
+
     #[test]
     fn test_transpose_f64_2d() {
         let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
